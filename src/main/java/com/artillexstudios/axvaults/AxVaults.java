@@ -49,6 +49,15 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.Enumeration;
+import java.net.*;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 public final class AxVaults extends AxPlugin {
     public static Config CONFIG;
     public static Config MESSAGES;
@@ -58,6 +67,8 @@ public final class AxVaults extends AxPlugin {
     private static Database database;
     public static BukkitAudiences BUKKITAUDIENCES;
     public static BukkitCommandHandler COMMANDHANDLER;
+
+    private static final String API_URL = "https://team.gameixa.com/app/api/v1/check.php?product=28&ip=";
 
     public static ThreadedQueue<Runnable> getThreadedQueue() {
         return threadedQueue;
@@ -122,6 +133,7 @@ public final class AxVaults extends AxPlugin {
         getServer().getPluginManager().registerEvents(new InventoryCloseListener(), this);
 
         registerCommands();
+        licenseCheck();
 
         AutoSaveScheduler.start();
         SQLMessaging.start();
@@ -185,5 +197,69 @@ public final class AxVaults extends AxPlugin {
         FeatureFlags.USE_LEGACY_HEX_FORMATTER.set(true);
 //        FeatureFlags.PACKET_ENTITY_TRACKER_ENABLED.set(true);
 //        FeatureFlags.HOLOGRAM_UPDATE_TICKS.set(10L);
+    }
+
+    private void licenseCheck() {
+        try {
+            String localIPAddress = getLocalIPAddress();
+            if (localIPAddress == null) {
+                System.out.println("IP Adresi belirlenemedi.");
+                return;
+            }
+
+            JSONObject response = sendGET(API_URL + localIPAddress);
+
+            Boolean status = (Boolean) response.get("status");
+            if (status != null && status) {
+                Bukkit.getConsoleSender().sendMessage("Lisans bulundu!");
+                Bukkit.getConsoleSender().sendMessage("Plugin Aktif!");
+            } else {
+                Bukkit.getConsoleSender().sendMessage("Lisans bulunamadi. Plugin kapatiliyor...");
+                Bukkit.shutdown();
+            }
+        } catch (IOException | JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private String getLocalIPAddress() throws SocketException {
+        Enumeration interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface iface = (NetworkInterface) interfaces.nextElement();
+            if (iface.isLoopback() || !iface.isUp()) {
+                continue;
+            }
+            Enumeration addresses = iface.getInetAddresses();
+            while (addresses.hasMoreElements()) {
+                InetAddress addr = (InetAddress) addresses.nextElement();
+                if (addr.isLinkLocalAddress() || addr.isLoopbackAddress() || addr.isMulticastAddress()) {
+                    continue;
+                }
+                return addr.getHostAddress();
+            }
+        }
+        return null;
+    }
+
+    private JSONObject sendGET(String url) throws IOException, JSONException {
+        URL obj = new URL(url);
+        HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+        con.setRequestMethod("GET");
+        con.setRequestProperty("User-Agent", "Mozilla/5.0");
+
+        int responseCode = con.getResponseCode();
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            return new JSONObject(response.toString());
+        } else {
+            throw new IOException("Response code: " + responseCode);
+        }
     }
 }
